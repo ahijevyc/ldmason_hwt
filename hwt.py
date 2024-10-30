@@ -61,7 +61,7 @@ extent = (-123.0, -72.1, 21.6, 50.4)
 
 # Multiple thresholds for updraft helicity
 helicityThresholds = xarray.DataArray(
-    [10, 20, 30, 40, 50, 75, 100, 125, 150, 175, 200, 250],
+    [10, 20, 30, 40, 50, 75, 100, 125, 150, 200, 250, 300],
     dims="thresh",
     attrs={"units": "$m^2/s^2$", "short_name":"uh"},
 )

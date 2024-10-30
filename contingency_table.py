@@ -15,12 +15,16 @@ def csi(contingency_table):
 
 
 def total(contingency_table):
-    return (
+    s = (
         contingency_table.sel(count="hits")
         + contingency_table.sel(count="misses")
         + contingency_table.sel(count="false alarms")
         + contingency_table.sel(count="correct nulls")
     )
+    s.name = "total"
+    s.attrs["short_name"] = "total"
+    return s
+
 
 def far(contingency_table):
     s = contingency_table.sel(count="false alarms") / (
