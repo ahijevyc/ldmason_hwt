@@ -89,6 +89,11 @@ mpas = Model(
     lead_time_days=5,
 )
 
+# created with derecho/scratch/ahijevyc/ldmason_hwt/make_latlon_mask_hwt.ipynb
+# hwt_mask is a LambertConf grid within geographic_sel. Trim others to mpas hwt interp domain
+mask0p25 = xarray.open_dataarray("hwt_0.25deg_mask.nc")
+mask0p5 = xarray.open_dataarray("hwt_0.5deg_mask.nc")
+
 
 def xtime(ds: xarray.Dataset):
     """convert xtime variable to datetime and assign to coordinate"""
