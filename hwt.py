@@ -1,9 +1,11 @@
 import logging
+import os
 from pathlib import Path
+from typing import Dict, Iterable, List, Sequence
 
 import cartopy
 import pandas as pd
-import xarray
+import xarray as xr
 
 
 class Model:
@@ -65,13 +67,13 @@ extent = (-123.0, -72.1, 21.6, 50.4)
 
 
 # Multiple thresholds for updraft helicity
-helicityThresholds = xarray.DataArray(
+helicityThresholds = xr.DataArray(
     [10, 20, 30, 40, 50, 75, 100, 125, 150, 200, 250, 300],
     dims="thresh",
     attrs={"units": "$m^2/s^2$", "short_name": "uh"},
 )
 
-windThresholds = xarray.DataArray(
+windThresholds = xr.DataArray(
     [5, 10, 15, 20, 25, 30, 35, 40, 45, 50],
     dims="thresh",
     attrs={"units": "$m/s$", "short_name": "wind"},
@@ -91,11 +93,11 @@ mpas = Model(
 
 # created with derecho/scratch/ahijevyc/ldmason_hwt/make_latlon_mask_hwt.ipynb
 # hwt_mask is a LambertConf grid within geographic_sel. Trim others to mpas hwt interp domain
-mask0p25 = xarray.open_dataarray("hwt_0.25deg_mask.nc")
-mask0p5 = xarray.open_dataarray("hwt_0.5deg_mask.nc")
+mask0p25 = xr.open_dataarray("hwt_0.25deg_mask.nc")
+mask0p5 = xr.open_dataarray("hwt_0.5deg_mask.nc")
 
 
-def xtime(ds: xarray.Dataset):
+def xtime(ds: xr.Dataset):
     """convert xtime variable to datetime and assign to coordinate"""
 
     # remove one-element-long Time dimension
@@ -136,3 +138,90 @@ def xtime(ds: xarray.Dataset):
     ds = ds.assign(forecastHour=float(forecastHour))
 
     return ds
+
+
+def get_dynamics_model(
+    model: str,
+    forecast_hours: Iterable[int],
+    ens_size: int,
+    vars_dict: Dict[str, str],
+    init_times: Sequence[pd.Timestamp],
+    output_grid: xr.Dataset,
+    CACHEDIR: Path,
+) -> xr.Dataset:
+    """
+    Retrieves and processes a dynamics model dataset.
+
+    Checks for a cached version of the data, otherwise loads it from NetCDF files,
+    processes it, regrids it to a target grid, and saves it to a Zarr store.
+    """
+    # Tried native mesh but no 850t or 500z.
+    ofile: Path = CACHEDIR / f"{model}.zarr"
+    print(f"creating {ofile}")
+    # Create list of input files
+    # This is a nested list comprehension, looping through
+    # init_times
+    #   forecast_hours
+    #       members (1 through ens_size)
+    # Create a triply-nested list of input files:
+    # Level 1: Initialization Times
+    # Level 2: Forecast Hours
+    # Level 3: Ensemble Members
+    ifiles: List[List[List[Path]]] = [
+        [
+            [
+                Path(f"/glade/campaign/mmm/parc/schwartz/HWT{init_time:%Y}/{model}")
+                / init_time.strftime("%Y%m%d%H")
+                / "post"
+                / f"mem_{mem}"
+                / f"interp_{model}_3km_{init_time:%Y%m%d%H}_mem{mem}_f{fhr:03d}.nc"
+                for mem in range(1, ens_size + 1)
+            ]
+            for fhr in forecast_hours
+        ]
+        for init_time in init_times
+    ]
+
+    ds = xr.open_mfdataset(
+        ifiles,
+        combine="nested",
+        concat_dim=["initialization_time", "forecast_hour", "number"],
+        preprocess=lambda ds: ds.assign_coords(forecast_hour=int(ds.attrs["forecastHour"])),
+        drop_variables=["total_precip_hrly"],
+        coords="minimal",
+        compat="override",
+        combine_attrs="drop",
+        chunks={},
+    ).squeeze(dim="time")
+    ds = ds.assign_coords(number=range(1, ens_size + 1), initialization_time=init_times)
+    ds = ds.assign_coords(
+        valid_time=ds["initialization_time"] + ds["forecast_hour"] * pd.Timedelta("1h")
+    )
+    ds = ds.rename(lat="y", lon="x")
+    # Define new output grid
+    output_grid = xr.Dataset(
+        coords={
+            "latitude": output_grid.coords["latitude"],
+            "longitude": output_grid.coords["longitude"],
+        }
+    )
+
+    # Select the first index along the dimensions you want to remove
+    # The `drop=True` argument removes the dimension and coordinate from the variable
+    for var_name in ["latitude", "longitude"]:
+        ds[var_name] = ds[var_name].isel(
+            initialization_time=0, forecast_hour=0, number=0, drop=True
+        )
+    ds["longitude"] = ds["longitude"] + 360  # MPAS/FV3 -180,180
+    ds = ds.rename(vars_dict)
+
+    # Create the regridding tool
+    regridder: xe.Regridder = xe.Regridder(ds, output_grid, method="bilinear")
+
+    # Apply the regridding to your dataset
+    ds = regridder(ds)
+
+    ds[list(vars_dict.values())].to_zarr(ofile)
+    return ds
+
+
