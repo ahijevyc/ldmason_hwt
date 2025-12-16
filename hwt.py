@@ -57,6 +57,11 @@ def firstRun(year=2024):
     if year == 2024:
         return pd.to_datetime("20240420")
 
+init_times23 = pd.date_range(firstRun(2023), pd.to_datetime(f"{2023}0531"), freq="24h")
+init_times24 = pd.date_range(firstRun(2024), pd.to_datetime(f"{2024}0531"), freq="24h")
+
+# Combine 2023 and 2024
+init_times = init_times23.union(init_times24)
 
 # for interp output
 projection = cartopy.crs.LambertConformal(
@@ -223,5 +228,4 @@ def get_dynamics_model(
 
     ds[list(vars_dict.values())].to_zarr(ofile)
     return ds
-
 
