@@ -1,5 +1,6 @@
 import logging
 
+import numpy as np
 import pandas as pd
 import requests
 import xarray as xr
@@ -44,13 +45,13 @@ def select_variables(ds, shortName, isobaricInhPa):
         raise
 
 
-def get_graphcast_output(shortName, isobaricInhPa):
+def get_graphcast_output(shortName, isobaricInhPa, subdir="graphcast"):
     ifiles = []
     for init_time in init_times:
-        idir = f"/glade/derecho/scratch/ahijevyc/ai-models/output/graphcast/{init_time:%Y%m%d%H}"
+        idir = f"/glade/derecho/scratch/ahijevyc/ai-models/output/{subdir}/{init_time:%Y%m%d%H}"
         ifiles.append([f"{idir}/{p}.nc" for p in gefs_members])
     logging.warning(f"Opening {len(ifiles)} files")
-    ds_graphcast = (
+    ds = (
         xr.open_mfdataset(
             ifiles,
             combine="nested",
@@ -65,20 +66,18 @@ def get_graphcast_output(shortName, isobaricInhPa):
         .rename({f"{shortName}{isobaricInhPa}": shortName})
     )
 
-    # Assign the coordinates to the dataset
-    lead_time_as_hours = ds_graphcast["lead_time"] / \
-        pd.to_timedelta(1, unit="h")
-    ds_graphcast = ds_graphcast.assign_coords(
-        forecast_hour=("lead_time", lead_time_as_hours.data))
-    ds_graphcast = ds_graphcast.swap_dims(lead_time="forecast_hour")
-    ds_graphcast = ds_graphcast.assign_coords(
-        valid_time=ds_graphcast.initialization_time + ds_graphcast.lead_time
-    )
+    # Convert manually to timedelta when .attrs["dtype"] is not set to timedelta64
+    if ds["lead_time"].dtype == 'int':
+        ds["lead_time"] = pd.to_timedelta(ds["lead_time"], unit=ds["lead_time"].attrs["units"])
+
+    lead_time_as_hours = ds["lead_time"] / np.timedelta64(1, "h")
+    ds = ds.assign_coords(forecast_hour=("lead_time", np.asarray(lead_time_as_hours)))
+    ds = ds.swap_dims(lead_time="forecast_hour")  # so you can select "hour 0"
+    ds = ds.assign_coords(valid_time=ds.initialization_time + ds.lead_time)
     # just return 0z please (use where instead of sel for non-indexed coord, valid_time)
-    ds_graphcast = ds_graphcast.where(
-        ds_graphcast.valid_time.dt.hour == 0, drop=True)
-    ds_graphcast = ds_graphcast.reindex(latitude=ds_graphcast.latitude[::-1])
+    ds = ds.where(ds.valid_time.dt.hour == 0, drop=True)
+    ds = ds.sortby("latitude", ascending=False)
 
     if shortName == "z":
-        ds_graphcast = ds_graphcast / g.m
-    return ds_graphcast
+        ds = ds / g.m
+    return ds
