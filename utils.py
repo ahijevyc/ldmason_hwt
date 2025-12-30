@@ -57,6 +57,7 @@ def get_graphcast_output(shortName, isobaricInhPa, subdir="graphcast"):
             combine="nested",
             concat_dim=["time", "number"],
             preprocess=lambda x: select_variables(x, shortName, isobaricInhPa),
+            chunks={'number': -1},
         )
         .rename(
             time="initialization_time",
