@@ -8,7 +8,7 @@ from hwt import init_times
 from metpy.constants import g
 
 gefs_members = ["gec00"] + [f"gep{i:02d}" for i in range(1, 31)]
-era5_varid = {"z": 129, "t": 130}
+era5_varid = {"z": 129, "t": 130, "u": 131, "v": 132, "q": 133}
 mpas_rename = {"height_500hPa": "z", "temperature_850hPa": "t"}
 
 
