@@ -45,7 +45,7 @@ def select_variables(ds, shortName, isobaricInhPa):
         raise
 
 
-def get_graphcast_output(shortName, isobaricInhPa, subdir="graphcast"):
+def get_graphcast_output(init_times, shortName, isobaricInhPa, subdir="graphcast"):
     ifiles = []
     for init_time in init_times:
         idir = f"/glade/derecho/scratch/ahijevyc/ai-models/output/{subdir}/{init_time:%Y%m%d%H}"
